@@ -5,40 +5,29 @@ module JsonapiRails4Middleware
     end
 
     def call(env)
-      @env = env
-      process_json if json? && jsonapi?
-      @app.call(@env)
-    end
+      request = Rack::Request.new(env)
 
-    private
+      if request.content_type == 'application/json'
+        request.body.rewind
+        body = request.body.read
+        request.body.rewind
+        json_params = body.empty? ? {} : JSON.parse(body)
+        data = json_params.fetch('data', nil)
+        attributes = data['attributes']
+        type = data['type']
+        jsonapi =  data && attributes && type
 
-    def process_json
-      params = {}
-      params[resource_name] = json_params['data']['attributes']
-      params[resource_name]['id'] = json_params['data']['id'] if json_params['data']['id']
-      @env['rack.input'] = StringIO.new(params.to_json)
-    end
+        if jsonapi
+          resource_name = type.singularize
+          params = {}
+          params[resource_name] = attributes
+          id = data['id']
+          params[resource_name]['id'] = id if id
+          env['rack.input'] = StringIO.new(params.to_json)
+        end
+      end
 
-    def resource_name
-      json_params['data']['type'].singularize
-    end
-
-    def json?
-      request.content_type == 'application/json'
-    end
-
-    def jsonapi?
-      json_params['data'] && json_params['data']['attributes'] && json_params['data']['type']
-    end
-
-    def json_params
-      body = request.body.read
-      request.body.rewind
-      body.empty? ? {} : JSON.parse(body)
-    end
-
-    def request
-      Rack::Request.new(@env)
+      @app.call(env)
     end
   end
 end
